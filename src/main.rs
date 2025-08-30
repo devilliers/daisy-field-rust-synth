@@ -13,7 +13,7 @@ use panic_halt as _;
 use daisy::audio;
 use hal::pac::{self, interrupt};
 use stm32h7xx_hal as hal;
-use stm32h7xx_hal::{adc, gpio::GpioExt, prelude::*};
+use stm32h7xx_hal::{adc, gpio::Pin, prelude::*};
 
 // --- Globals ---
 static AUDIO_INTERFACE: Mutex<RefCell<Option<audio::Interface>>> = Mutex::new(RefCell::new(None));
@@ -32,6 +32,32 @@ fn audio_callback(buffer: &mut [(f32, f32); 32]) {
             if PHASE > 2.0 * PI {
                 PHASE -= 2.0 * PI;
             }
+        }
+    }
+}
+
+fn read_knob(
+    knob: u8,
+    mux_sel_0: &mut Pin<'C', 4, hal::gpio::Output>,
+    mux_sel_1: &mut Pin<'C', 1, hal::gpio::Output>,
+    mux_sel_2: &mut Pin<'A', 6, hal::gpio::Output>,
+) {
+    match knob {
+        1 => {
+            mux_sel_2.set_low();
+            mux_sel_1.set_low();
+            mux_sel_0.set_low();
+        }
+        2 => {
+            mux_sel_2.set_low();
+            mux_sel_1.set_high();
+            mux_sel_0.set_high();
+        }
+        _ => {
+            // Default to knob 1 if invalid knob number
+            mux_sel_2.set_low();
+            mux_sel_1.set_low();
+            mux_sel_0.set_low();
         }
     }
 }
@@ -71,9 +97,9 @@ fn main() -> ! {
     let mut mux_adc_pin = pins.GPIO.PIN_16.into_analog();
 
     // The 3 selector pins, configured as outputs
-    let mut mux_sel_0 = pins.GPIO.PIN_26.into_push_pull_output();
-    let mut mux_sel_1 = pins.GPIO.PIN_27.into_push_pull_output();
-    let mut mux_sel_2 = pins.GPIO.PIN_28.into_push_pull_output();
+    let mut mux_sel_0 = pins.GPIO.PIN_21.into_push_pull_output();
+    let mut mux_sel_1 = pins.GPIO.PIN_20.into_push_pull_output();
+    let mut mux_sel_2 = pins.GPIO.PIN_19.into_push_pull_output();
 
     // --- Audio Setup ---
     let audio_interface = daisy::board_split_audio!(ccdr, pins).spawn().unwrap();
@@ -91,17 +117,13 @@ fn main() -> ! {
 
     let one_second = ccdr.clocks.sys_ck().to_Hz();
     loop {
-        // --- Read Knob 1 (Channel 4 -> 100) ---
-        mux_sel_2.set_high();
-        mux_sel_1.set_low();
-        mux_sel_0.set_low();
+        // --- Read Knob 1 (Channel 1 -> 000) ---
+        read_knob(1, &mut mux_sel_0, &mut mux_sel_1, &mut mux_sel_2);
         asm::delay(100); // Small delay for MUX to settle
         let knob1_val: u32 = adc1.read(&mut mux_adc_pin).unwrap();
 
-        // --- Read Knob 2 (Channel 5 -> 101) ---
-        mux_sel_2.set_high();
-        mux_sel_1.set_low();
-        mux_sel_0.set_high();
+        // --- Read Knob 2 (Channel 2 -> 011) ---
+        read_knob(2, &mut mux_sel_0, &mut mux_sel_1, &mut mux_sel_2);
         asm::delay(100); // Small delay for MUX to settle
         let knob2_val: u32 = adc1.read(&mut mux_adc_pin).unwrap();
 
