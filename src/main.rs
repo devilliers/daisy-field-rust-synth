@@ -40,12 +40,14 @@ fn audio_callback(buffer: &mut [(f32, f32); 32]) {
 fn main() -> ! {
     let mut cp = cortex_m::Peripherals::take().unwrap();
     let dp = pac::Peripherals::take().unwrap();
+    let board = daisy::Board::take().unwrap();
 
     cp.SCB.enable_icache();
     cp.SCB.enable_dcache(&mut cp.CPUID);
 
-    let board = daisy::Board::take().unwrap();
+    // Configure board's peripherals.
     let ccdr = daisy::board_freeze_clocks!(board, dp);
+    let pins = daisy::board_split_gpios!(board, ccdr, dp);
 
     // --- ADC Setup for Knobs ---
     let mut delay = cp.SYST.delay(ccdr.clocks);
@@ -61,24 +63,13 @@ fn main() -> ! {
     adc1.set_resolution(adc::Resolution::SixteenBit);
     adc1.set_sample_time(adc::AdcSampleTime::T_810);
 
-    // --- Manually expand the `board_split_gpios!` macro ---
-    let pins = board.split_gpios(
-        dp.GPIOA.split(ccdr.peripheral.GPIOA),
-        dp.GPIOB.split(ccdr.peripheral.GPIOB),
-        dp.GPIOC.split(ccdr.peripheral.GPIOC),
-        dp.GPIOD.split(ccdr.peripheral.GPIOD),
-        dp.GPIOE.split(ccdr.peripheral.GPIOE),
-        dp.GPIOF.split(ccdr.peripheral.GPIOF),
-        dp.GPIOG.split(ccdr.peripheral.GPIOG),
-        dp.GPIOH.split(ccdr.peripheral.GPIOH),
-        dp.GPIOI.split(ccdr.peripheral.GPIOI),
-    );
-
-    let mut led_user = daisy::board_split_leds!(pins).USER;
+    // Get a handle on the on-board LED to later use as an indicator.
+    let mut led_user = pins.LED_USER.into_push_pull_output();
 
     // --- Setup Multiplexer Pins ---
     // The single ADC pin for all knobs
     let mut mux_adc_pin = pins.GPIO.PIN_16.into_analog();
+
     // The 3 selector pins, configured as outputs
     let mut mux_sel_0 = pins.GPIO.PIN_26.into_push_pull_output();
     let mut mux_sel_1 = pins.GPIO.PIN_27.into_push_pull_output();
