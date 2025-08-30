@@ -94,8 +94,8 @@ fn main() -> ! {
 
     // --- Main Loop ---
     const MIN_FREQ: f32 = 20.0;
-    const MAX_FREQ_RANGE: f32 = 2000.0;
-    const SMOOTHING_FACTOR: f32 = 0.05;
+    const MAX_FREQ_RANGE: f32 = 6000.0;
+    const SMOOTHING_FACTOR: f32 = 0.50;
     let mut smoothed_freq = MIN_FREQ;
     let mut smoothed_amp = 0.0;
     let one_second = ccdr.clocks.sys_ck().to_Hz();
@@ -143,6 +143,6 @@ fn main() -> ! {
         );
 
         led_user.toggle();
-        asm::delay(one_second / 30);
+        asm::delay(one_second / 100);
     }
 }
