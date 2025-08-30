@@ -149,7 +149,6 @@ fn main() -> ! {
     // --- OLED Display Setup ---
     let mut display = {
         // The Daisy Field uses a Daisy Seed, so we use the "seed" pin configuration.
-        // --- CORRECTED CODE ---
         let sck_pin = pins.GPIO.PIN_8.into_alternate(); // SCK: D10 on Field
         let mosi_pin = pins.GPIO.PIN_10.into_alternate(); // MOSI: D9 on Field
         let mut rst_pin = pins.GPIO.PIN_30.into_push_pull_output(); // RESET: A9 on Field
@@ -186,6 +185,8 @@ fn main() -> ! {
     const DISPLAY_WIDTH: i32 = 128;
     const DISPLAY_HEIGHT: i32 = 64;
     const DISPLAY_CENTER_Y: i32 = DISPLAY_HEIGHT / 2;
+    const MIN_CYCLES: f32 = 1.0; // Min cycles to show on screen
+    const MAX_CYCLES: f32 = 10.0; // Max cycles to show on screen
 
     loop {
         // --- Read Knobs and Update Audio Parameters (same as before) ---
@@ -224,8 +225,10 @@ fn main() -> ! {
         // --- Draw Waveform to Display ---
         display.clear(BinaryColor::Off).unwrap();
 
-        // We will draw two full cycles of the wave on the screen
-        let cycles_on_screen = 2.0;
+        // Determine how many cycles to show based on frequency
+        let normalized_freq = (smoothed_freq - MIN_FREQ) / MAX_FREQ_RANGE;
+        let cycles_on_screen =
+            MIN_CYCLES + normalized_freq.max(0.0).min(1.0) * (MAX_CYCLES - MIN_CYCLES);
 
         // Draw the wave by connecting 127 small lines
         for x in 0..(DISPLAY_WIDTH - 1) {
