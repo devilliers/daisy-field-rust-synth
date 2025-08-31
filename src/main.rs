@@ -8,17 +8,21 @@ mod audio;
 mod display;
 mod hardware;
 mod oscillator;
+mod recording;
 
 use cortex_m::asm;
 use cortex_m_rt::entry;
 use panic_halt as _;
 
+use ssd1306::mode::DisplayConfig;
 use stm32h7xx_hal as hal;
 
-use panic_halt as _;
-
-use ssd1306::mode::DisplayConfig;
-use stm32h7xx_hal::prelude::*;
+// Consolidate HAL imports
+use hal::{
+    gpio::Speed,
+    prelude::*,
+    sdmmc::{SdCard, Sdmmc},
+};
 
 #[entry]
 fn main() -> ! {
@@ -32,6 +36,54 @@ fn main() -> ! {
     let pins = daisy::board_split_gpios!(board, ccdr, dp);
     let mut led_user = pins.LED_USER.into_push_pull_output();
 
+    // --- Button Setup (Using SW2 on Pin 29 to avoid conflict) ---
+    let sw1 = pins.GPIO.PIN_29.into_pull_up_input();
+
+    // --- SD Card Setup (Corrected Pins based on Schematic) ---
+    let clk = pins.GPIO.PIN_6.into_alternate().speed(Speed::VeryHigh);
+    let cmd = pins
+        .GPIO
+        .PIN_5
+        .into_alternate()
+        .internal_pull_up(true)
+        .speed(Speed::VeryHigh);
+    let d0 = pins
+        .GPIO
+        .PIN_4
+        .into_alternate()
+        .internal_pull_up(true)
+        .speed(Speed::VeryHigh);
+    let d1 = pins
+        .GPIO
+        .PIN_3
+        .into_alternate()
+        .internal_pull_up(true)
+        .speed(Speed::VeryHigh);
+    let d2 = pins
+        .GPIO
+        .PIN_2
+        .into_alternate()
+        .internal_pull_up(true)
+        .speed(Speed::VeryHigh);
+    let d3 = pins
+        .GPIO
+        .PIN_1
+        .into_alternate()
+        .internal_pull_up(true)
+        .speed(Speed::VeryHigh);
+
+    let mut sdmmc: Sdmmc<_, SdCard> = dp.SDMMC1.sdmmc(
+        (clk, cmd, d0, d1, d2, d3),
+        ccdr.peripheral.SDMMC1,
+        &ccdr.clocks,
+    );
+
+    // Initialize card at a lower speed
+    while sdmmc.init(10.MHz()).is_err() {
+        led_user.toggle();
+        asm::delay(ccdr.clocks.sys_ck().to_Hz() / 20); // Blink fast
+    }
+
     // --- ADC and Multiplexer Setup ---
     let mut delay = cp.SYST.delay(ccdr.clocks);
     let mut adc1 = hal::adc::Adc::adc1(
@@ -43,7 +95,7 @@ fn main() -> ! {
     )
     .enable();
     adc1.set_resolution(hal::adc::Resolution::SixteenBit);
-    let mut mux_adc_pin = pins.GPIO.PIN_16.into_analog(); // PC3
+    let mut mux_adc_pin = pins.GPIO.PIN_16.into_analog();
     let mut mux_sel_0 = pins.GPIO.PIN_21.into_push_pull_output();
     let mut mux_sel_1 = pins.GPIO.PIN_20.into_push_pull_output();
     let mut mux_sel_2 = pins.GPIO.PIN_19.into_push_pull_output();
@@ -59,7 +111,7 @@ fn main() -> ! {
         hal::pac::NVIC::unmask(hal::pac::interrupt::DMA1_STR1);
     }
 
-    // --- OLED Display Setup ---
+    // --- OLED Display Setup (Uses Pin 30 for Reset) ---
     let mut display = {
         let sck = pins.GPIO.PIN_8.into_alternate();
         let mosi = pins.GPIO.PIN_10.into_alternate();
@@ -97,11 +149,66 @@ fn main() -> ! {
     const MAX_FREQ_RANGE: f32 = 6000.0;
     const SMOOTHING_FACTOR: f32 = 0.50;
     let mut smoothed_freq = MIN_FREQ;
-    let mut smoothed_amp = 0.05;
-    let mut smoothed_wave_shape = 0.05;
+    let mut smoothed_amp = 0.0;
+    let mut smoothed_wave_shape = 0.0;
+    let mut smoothed_fold_gain = 1.0;
+    let mut smoothed_pm_amount = 0.0;
     let one_second = ccdr.clocks.sys_ck().to_Hz();
 
+    let mut last_sw1_state = sw1.is_high();
+    let mut next_block_to_write: u32 = 0;
+
     loop {
+        // --- Check for Recording Trigger ---
+        let current_sw1_state = sw1.is_high();
+        if last_sw1_state && !current_sw1_state {
+            cortex_m::interrupt::free(|cs| {
+                let mut recorder = recording::RECORDER.borrow(cs).borrow_mut();
+                recorder.toggle_recording();
+                // When starting a new recording, reset the block counter
+                if recorder.is_recording {
+                    next_block_to_write = 0;
+                }
+            });
+        }
+        last_sw1_state = current_sw1_state;
+
+        // --- Check if a buffer needs to be written to the SD card ---
+        let buffer_to_write = cortex_m::interrupt::free(|cs| {
+            recording::RECORDER
+                .borrow(cs)
+                .borrow_mut()
+                .write_buffer
+                .take()
+        });
+
+        if let Some(buffer) = buffer_to_write {
+            led_user.set_high();
+            let data_to_write = cortex_m::interrupt::free(|cs| {
+                let recorder = recording::RECORDER.borrow(cs).borrow();
+                match buffer {
+                    recording::Buffer::Ping => recorder.ping_buffer,
+                    recording::Buffer::Pong => recorder.pong_buffer,
+                }
+            });
+
+            // Convert i16 slice to u8 slice for writing
+            let byte_slice: &[u8] =
+                unsafe { core::slice::from_raw_parts(data_to_write.as_ptr() as *const u8, 512) };
+
+            // Convert the slice to a fixed-size array reference before writing
+            let block_to_write: &[u8; 512] = byte_slice.try_into().unwrap();
+
+            // Write the raw block to the card
+            if sdmmc
+                .write_block(next_block_to_write, block_to_write)
+                .is_ok()
+            {
+                next_block_to_write += 1;
+            }
+            led_user.set_low();
+        }
+
         // --- Read Knobs and Update Parameters ---
         let knob1_val = hardware::read_knob_value(
             1,
@@ -127,22 +234,46 @@ fn main() -> ! {
             &mut adc1,
             &mut mux_adc_pin,
         );
+        let knob4_val = hardware::read_knob_value(
+            4,
+            &mut mux_sel_0,
+            &mut mux_sel_1,
+            &mut mux_sel_2,
+            &mut adc1,
+            &mut mux_adc_pin,
+        );
+        let knob5_val = hardware::read_knob_value(
+            5,
+            &mut mux_sel_0,
+            &mut mux_sel_1,
+            &mut mux_sel_2,
+            &mut adc1,
+            &mut mux_adc_pin,
+        );
 
         let target_freq = MIN_FREQ + (knob1_val.unwrap() as f32 / 65535.0) * MAX_FREQ_RANGE;
         let target_amp = knob2_val.unwrap() as f32 / 65535.0;
         let target_wave_shape = (knob3_val.unwrap() as f32 / 65535.0) * 2.0;
+        let target_fold_gain = 1.0 + (knob4_val.unwrap() as f32 / 65535.0) * 9.0;
+        let target_pm_amount = (knob5_val.unwrap() as f32 / 65535.0) * 10.0;
 
         smoothed_freq =
             (target_freq * SMOOTHING_FACTOR) + (smoothed_freq * (1.0 - SMOOTHING_FACTOR));
         smoothed_amp = (target_amp * SMOOTHING_FACTOR) + (smoothed_amp * (1.0 - SMOOTHING_FACTOR));
         smoothed_wave_shape = (target_wave_shape * SMOOTHING_FACTOR)
             + (smoothed_wave_shape * (1.0 - SMOOTHING_FACTOR));
+        smoothed_fold_gain =
+            (target_fold_gain * SMOOTHING_FACTOR) + (smoothed_fold_gain * (1.0 - SMOOTHING_FACTOR));
+        smoothed_pm_amount =
+            (target_pm_amount * SMOOTHING_FACTOR) + (smoothed_pm_amount * (1.0 - SMOOTHING_FACTOR));
 
         cortex_m::interrupt::free(|cs| {
             audio::OSCILLATOR.borrow(cs).borrow_mut().set_params(
                 smoothed_freq,
                 smoothed_amp,
                 smoothed_wave_shape,
+                smoothed_fold_gain,
+                smoothed_pm_amount,
             );
         });
 
@@ -154,9 +285,10 @@ fn main() -> ! {
             MIN_FREQ,
             MAX_FREQ_RANGE,
             smoothed_wave_shape,
+            smoothed_fold_gain,
+            smoothed_pm_amount,
         );
 
-        led_user.toggle();
-        asm::delay(one_second / 100);
+        asm::delay(one_second / 200);
     }
 }

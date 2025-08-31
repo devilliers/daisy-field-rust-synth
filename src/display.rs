@@ -7,6 +7,7 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle},
 };
 use libm::sinf;
+use micromath::F32Ext;
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, Ssd1306};
 use stm32h7xx_hal as hal;
 
@@ -66,6 +67,8 @@ pub fn draw_waveform(
     min_freq: f32,
     max_freq_range: f32,
     wave_shape: f32,
+    fold_gain: f32,
+    pm_amount: f32,
 ) {
     const MIN_CYCLES: f32 = 1.0;
     const MAX_CYCLES: f32 = 10.0;
@@ -77,28 +80,42 @@ pub fn draw_waveform(
         MIN_CYCLES + normalized_freq.max(0.0).min(1.0) * (MAX_CYCLES - MIN_CYCLES);
 
     for x in 0..(DISPLAY_WIDTH - 1) {
-        let phase1 = (x as f32 / DISPLAY_WIDTH as f32) * TWO_PI * cycles_on_screen;
-        let phase2 = ((x + 1) as f32 / DISPLAY_WIDTH as f32) * TWO_PI * cycles_on_screen;
+        let get_waveform_value = |phase: f32| -> f32 {
+            let modulator = sinf(phase);
+            let modulated_phase = phase + modulator * pm_amount;
+            let wrapped_phase = modulated_phase.rem_euclid(TWO_PI);
 
-        let sin_val1 = sinf(phase1);
-        let tri_val1 = triangle_wave(phase1);
-        let sqr_val1 = square_wave(phase1);
+            let sin_val = sinf(modulated_phase);
+            let tri_val = if wrapped_phase < PI {
+                -1.0 + (2.0 * wrapped_phase / PI)
+            } else {
+                1.0 - (2.0 * (wrapped_phase - PI) / PI)
+            };
+            let sqr_val = if wrapped_phase < PI { 1.0 } else { -1.0 };
 
-        let sin_val2 = sinf(phase2);
-        let tri_val2 = triangle_wave(phase2);
-        let sqr_val2 = square_wave(phase2);
+            let mut value = if wave_shape < 1.0 {
+                (1.0 - wave_shape) * sin_val + wave_shape * tri_val
+            } else {
+                (2.0 - wave_shape) * tri_val + (wave_shape - 1.0) * sqr_val
+            };
 
-        let val1 = if wave_shape < 1.0 {
-            (1.0 - wave_shape) * sin_val1 + wave_shape * tri_val1
-        } else {
-            (2.0 - wave_shape) * tri_val1 + (wave_shape - 1.0) * sqr_val1
+            // Apply wavefolding visualization
+            value *= fold_gain;
+            const FOLD_THRESHOLD: f32 = 1.0;
+            for _ in 0..4 {
+                if value > FOLD_THRESHOLD {
+                    value = FOLD_THRESHOLD - (value - FOLD_THRESHOLD);
+                } else if value < -FOLD_THRESHOLD {
+                    value = -FOLD_THRESHOLD - (value + FOLD_THRESHOLD);
+                }
+            }
+            value
         };
 
-        let val2 = if wave_shape < 1.0 {
-            (1.0 - wave_shape) * sin_val2 + wave_shape * tri_val2
-        } else {
-            (2.0 - wave_shape) * tri_val2 + (wave_shape - 1.0) * sqr_val2
-        };
+        let val1 =
+            get_waveform_value((x as f32 / DISPLAY_WIDTH as f32) * TWO_PI * cycles_on_screen);
+        let val2 =
+            get_waveform_value(((x + 1) as f32 / DISPLAY_WIDTH as f32) * TWO_PI * cycles_on_screen);
 
         let y1 = DISPLAY_CENTER_Y - (val1 * smoothed_amp * (DISPLAY_CENTER_Y - 1) as f32) as i32;
         let y2 = DISPLAY_CENTER_Y - (val2 * smoothed_amp * (DISPLAY_CENTER_Y - 1) as f32) as i32;

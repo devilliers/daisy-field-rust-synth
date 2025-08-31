@@ -1,8 +1,8 @@
 // src/audio.rs
 
-use crate::oscillator::Oscillator;
+use crate::{oscillator::Oscillator, recording}; // Add recording
 use core::cell::RefCell;
-use cortex_m::interrupt::{free, Mutex}; // Only import `free` and `Mutex`
+use cortex_m::interrupt::{free, Mutex};
 use daisy::audio;
 use stm32h7xx_hal::interrupt;
 
@@ -13,13 +13,15 @@ pub static OSCILLATOR: Mutex<RefCell<Oscillator>> = Mutex::new(RefCell::new(Osci
 
 // --- Audio Callback ---
 fn audio_callback(buffer: &mut [(f32, f32); 32]) {
-    // --- AND CHANGE THIS LINE ---
     free(|cs| {
-        // Use `free` directly instead of `interrupt::free`
         let mut oscillator = OSCILLATOR.borrow(cs).borrow_mut();
+        let mut recorder = recording::RECORDER.borrow(cs).borrow_mut();
+
         for frame in buffer.iter_mut() {
             let sample = oscillator.next_sample();
             *frame = (sample, sample);
+            // Record the left channel sample
+            recorder.record_sample(sample);
         }
     });
 }
@@ -27,9 +29,7 @@ fn audio_callback(buffer: &mut [(f32, f32); 32]) {
 // --- Interrupt Handler ---
 #[interrupt]
 fn DMA1_STR1() {
-    // --- AND CHANGE THIS LINE ---
     free(|cs| {
-        // Use `free` directly instead of `interrupt::free`
         if let Some(audio_interface) = AUDIO_INTERFACE.borrow(cs).borrow_mut().as_mut() {
             audio_interface
                 .handle_interrupt_dma1_str1(audio_callback)
