@@ -98,6 +98,7 @@ fn main() -> ! {
     const SMOOTHING_FACTOR: f32 = 0.50;
     let mut smoothed_freq = MIN_FREQ;
     let mut smoothed_amp = 0.0;
+    let mut smoothed_wave_shape = 0.0;
     let one_second = ccdr.clocks.sys_ck().to_Hz();
 
     loop {
@@ -118,19 +119,31 @@ fn main() -> ! {
             &mut adc1,
             &mut mux_adc_pin,
         );
+        let knob3_val = hardware::read_knob_value(
+            3,
+            &mut mux_sel_0,
+            &mut mux_sel_1,
+            &mut mux_sel_2,
+            &mut adc1,
+            &mut mux_adc_pin,
+        );
 
         let target_freq = MIN_FREQ + (knob1_val.unwrap() as f32 / 65535.0) * MAX_FREQ_RANGE;
         let target_amp = knob2_val.unwrap() as f32 / 65535.0;
+        let target_wave_shape = (knob3_val.unwrap() as f32 / 65535.0) * 2.0;
 
         smoothed_freq =
             (target_freq * SMOOTHING_FACTOR) + (smoothed_freq * (1.0 - SMOOTHING_FACTOR));
         smoothed_amp = (target_amp * SMOOTHING_FACTOR) + (smoothed_amp * (1.0 - SMOOTHING_FACTOR));
+        smoothed_wave_shape = (target_wave_shape * SMOOTHING_FACTOR)
+            + (smoothed_wave_shape * (1.0 - SMOOTHING_FACTOR));
 
         cortex_m::interrupt::free(|cs| {
-            audio::OSCILLATOR
-                .borrow(cs)
-                .borrow_mut()
-                .set_params(smoothed_freq, smoothed_amp);
+            audio::OSCILLATOR.borrow(cs).borrow_mut().set_params(
+                smoothed_freq,
+                smoothed_amp,
+                smoothed_wave_shape,
+            );
         });
 
         // --- Draw Waveform to Display ---
@@ -140,6 +153,7 @@ fn main() -> ! {
             smoothed_amp,
             MIN_FREQ,
             MAX_FREQ_RANGE,
+            smoothed_wave_shape,
         );
 
         led_user.toggle();
