@@ -97,8 +97,8 @@ fn main() -> ! {
     const MAX_FREQ_RANGE: f32 = 6000.0;
     const SMOOTHING_FACTOR: f32 = 0.50;
     let mut smoothed_freq = MIN_FREQ;
-    let mut smoothed_amp = 0.0;
-    let mut smoothed_wave_shape = 0.0;
+    let mut smoothed_amp = 0.05;
+    let mut smoothed_wave_shape = 0.05;
     let one_second = ccdr.clocks.sys_ck().to_Hz();
 
     loop {
