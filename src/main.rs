@@ -17,12 +17,25 @@ use panic_halt as _;
 use ssd1306::mode::DisplayConfig;
 use stm32h7xx_hal as hal;
 
-// Consolidate HAL imports
+// --- Corrected and Organized Imports ---
 use hal::{
+    // We need the ADC's Resolution enum for the DAC
+    adc::Resolution as AdcResolution,
+    // Import the concrete Channel1 and Enabled types for the DAC.
+    // Channel1 is the type-erased wrapper for the specific pin.
+    dac::{Enabled, C1},
+    device::DAC,
     gpio::Speed,
+    // This prelude brings in essential traits like DacExt for the .split() method
     prelude::*,
     sdmmc::{SdCard, Sdmmc},
 };
+
+use core::cell::RefCell;
+use cortex_m::interrupt::Mutex;
+
+// --- Use the concrete, Sized, and Send `Channel1<Enabled>` struct type ---
+pub static DAC1: Mutex<RefCell<Option<C1<DAC, Enabled>>>> = Mutex::new(RefCell::new(None));
 
 #[entry]
 fn main() -> ! {
@@ -84,6 +97,18 @@ fn main() -> ! {
         asm::delay(ccdr.clocks.sys_ck().to_Hz() / 20); // Blink fast
     }
 
+    // --- Correct DAC Setup using .split() ---
+    let dac1_pin = pins.GPIO.PIN_23.into_analog(); // A8/D23 is DAC_OUT_1
+    let dac2_pin = pins.GPIO.PIN_22.into_analog(); // A7/D22 is DAC_OUT_2
+
+    // The DacExt trait (brought in by the prelude) provides the .split() method
+    let (mut dac1, _dac2) = dp
+        .DAC
+        .split(ccdr.peripheral.DAC, &ccdr.clocks, dac1_pin, dac2_pin);
+
+    dac1.set_resolution(AdcResolution::TwelveBit);
+    let dac1_out = dac1.enable();
+
     // --- ADC and Multiplexer Setup ---
     let mut delay = cp.SYST.delay(ccdr.clocks);
     let mut adc1 = hal::adc::Adc::adc1(
@@ -94,7 +119,7 @@ fn main() -> ! {
         &ccdr.clocks,
     )
     .enable();
-    adc1.set_resolution(hal::adc::Resolution::SixteenBit);
+    adc1.set_resolution(AdcResolution::SixteenBit);
     let mut mux_adc_pin = pins.GPIO.PIN_16.into_analog();
     let mut mux_sel_0 = pins.GPIO.PIN_21.into_push_pull_output();
     let mut mux_sel_1 = pins.GPIO.PIN_20.into_push_pull_output();
@@ -105,7 +130,9 @@ fn main() -> ! {
     cortex_m::interrupt::free(|cs| {
         audio::AUDIO_INTERFACE
             .borrow(cs)
-            .replace(Some(audio_interface))
+            .replace(Some(audio_interface));
+        // Store the initialized DAC in the global static variable
+        DAC1.borrow(cs).replace(Some(dac1_out));
     });
     unsafe {
         hal::pac::NVIC::unmask(hal::pac::interrupt::DMA1_STR1);
