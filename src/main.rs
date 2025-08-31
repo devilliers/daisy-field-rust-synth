@@ -103,7 +103,7 @@ fn main() -> ! {
     loop {
         // --- Read Knobs and Update Parameters ---
         let knob1_val = hardware::read_knob_value(
-            0,
+            1,
             &mut mux_sel_0,
             &mut mux_sel_1,
             &mut mux_sel_2,
@@ -119,8 +119,8 @@ fn main() -> ! {
             &mut mux_adc_pin,
         );
 
-        let target_freq = MIN_FREQ + (knob1_val as f32 / 65535.0) * MAX_FREQ_RANGE;
-        let target_amp = knob2_val as f32 / 65535.0;
+        let target_freq = MIN_FREQ + (knob1_val.unwrap() as f32 / 65535.0) * MAX_FREQ_RANGE;
+        let target_amp = knob2_val.unwrap() as f32 / 65535.0;
 
         smoothed_freq =
             (target_freq * SMOOTHING_FACTOR) + (smoothed_freq * (1.0 - SMOOTHING_FACTOR));

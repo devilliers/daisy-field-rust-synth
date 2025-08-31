@@ -16,7 +16,7 @@ pub fn read_knob_value(
     mux_sel_2: &mut Pin<'A', 6, Output<PushPull>>,
     adc: &mut adc::Adc<pac::ADC1, adc::Enabled>,
     adc_pin: &mut Pin<'A', 3, Analog>,
-) -> u32 {
+) -> Option<u32> {
     let _ = knob & 0b111; // Ensure index is within 0-7
 
     match knob {
@@ -30,14 +30,41 @@ pub fn read_knob_value(
             mux_sel_1.set_high();
             mux_sel_0.set_high();
         }
-        _ => {
-            // Default to knob 1 if invalid knob number
+        3 => {
             mux_sel_2.set_low();
             mux_sel_1.set_low();
+            mux_sel_0.set_high();
+        }
+        4 => {
+            mux_sel_2.set_high();
+            mux_sel_1.set_low();
             mux_sel_0.set_low();
+        }
+        5 => {
+            mux_sel_2.set_low();
+            mux_sel_1.set_high();
+            mux_sel_0.set_low();
+        }
+        6 => {
+            mux_sel_2.set_high();
+            mux_sel_1.set_low();
+            mux_sel_0.set_high();
+        }
+        7 => {
+            mux_sel_2.set_high();
+            mux_sel_1.set_high();
+            mux_sel_0.set_low();
+        }
+        8 => {
+            mux_sel_2.set_high();
+            mux_sel_1.set_high();
+            mux_sel_0.set_high();
+        }
+        _ => {
+            return None;
         }
     }
 
     asm::delay(100); // Small delay for the multiplexer to settle.
-    adc.read(adc_pin).unwrap_or(0)
+    Some(adc.read(adc_pin).unwrap_or(0))
 }
