@@ -1,6 +1,7 @@
 // src/display.rs
 
 use core::f32::consts::PI;
+use daisy::hal;
 use embedded_graphics::{
     pixelcolor::BinaryColor,
     prelude::*,
@@ -9,14 +10,13 @@ use embedded_graphics::{
 use libm::sinf;
 use micromath::F32Ext;
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, Ssd1306};
-use stm32h7xx_hal as hal;
 
 // Type alias for our specific display object to make function signatures cleaner
 pub type OledDisplay = Ssd1306<
     display_interface_spi::SPIInterface<
-        stm32h7xx_hal::spi::Spi<stm32h7xx_hal::pac::SPI1, hal::spi::Enabled>,
-        stm32h7xx_hal::gpio::Pin<'B', 4, stm32h7xx_hal::gpio::Output>,
-        stm32h7xx_hal::gpio::Pin<'G', 10, stm32h7xx_hal::gpio::Output>,
+        daisy::hal::spi::Spi<daisy::pac::SPI1, hal::spi::Enabled>,
+        daisy::hal::gpio::Pin<'B', 4, daisy::hal::gpio::Output>,
+        daisy::hal::gpio::Pin<'G', 10, daisy::hal::gpio::Output>,
     >,
     DisplaySize128x64,
     BufferedGraphicsMode<DisplaySize128x64>,
@@ -27,38 +27,6 @@ const DISPLAY_WIDTH: i32 = 128;
 const DISPLAY_HEIGHT: i32 = 64;
 const DISPLAY_CENTER_Y: i32 = DISPLAY_HEIGHT / 2;
 const TWO_PI: f32 = 2.0 * PI;
-
-fn triangle_wave(phase: f32) -> f32 {
-    let mut phase = phase;
-    while phase < 0.0 {
-        phase += TWO_PI;
-    }
-    while phase >= TWO_PI {
-        phase -= TWO_PI;
-    }
-
-    if phase < PI {
-        -1.0 + (2.0 * phase / PI)
-    } else {
-        1.0 - (2.0 * (phase - PI) / PI)
-    }
-}
-
-fn square_wave(phase: f32) -> f32 {
-    let mut phase = phase;
-    while phase < 0.0 {
-        phase += TWO_PI;
-    }
-    while phase >= TWO_PI {
-        phase -= TWO_PI;
-    }
-
-    if phase < PI {
-        1.0
-    } else {
-        -1.0
-    }
-}
 
 pub fn draw_waveform(
     display: &mut OledDisplay,
