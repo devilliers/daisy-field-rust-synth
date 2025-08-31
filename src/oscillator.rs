@@ -1,7 +1,6 @@
 // src/oscillator.rs
 
 use core::f32::consts::PI;
-use libm::sinf;
 
 // --- Constants ---
 pub const SAMPLE_RATE: f32 = 48_000.0;
@@ -29,11 +28,15 @@ impl Oscillator {
     }
 
     pub fn next_sample(&mut self) -> f32 {
-        let sample = sinf(self.phase) * self.amplitude;
+        let sample = if self.phase < PI {
+            -1.0 + (2.0 * self.phase / PI)
+        } else {
+            1.0 - (2.0 * (self.phase - PI) / PI)
+        };
         self.phase += TWO_PI * self.frequency / SAMPLE_RATE;
         while self.phase >= TWO_PI {
             self.phase -= TWO_PI;
         }
-        sample
+        sample * self.amplitude
     }
 }

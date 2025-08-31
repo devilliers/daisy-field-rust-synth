@@ -6,7 +6,6 @@ use embedded_graphics::{
     prelude::*,
     primitives::{Line, PrimitiveStyle},
 };
-use libm::sinf;
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, Ssd1306};
 use stm32h7xx_hal as hal;
 
@@ -26,6 +25,22 @@ const DISPLAY_WIDTH: i32 = 128;
 const DISPLAY_HEIGHT: i32 = 64;
 const DISPLAY_CENTER_Y: i32 = DISPLAY_HEIGHT / 2;
 const TWO_PI: f32 = 2.0 * PI;
+
+fn triangle_wave(phase: f32) -> f32 {
+    let mut phase = phase;
+    while phase < 0.0 {
+        phase += TWO_PI;
+    }
+    while phase >= TWO_PI {
+        phase -= TWO_PI;
+    }
+
+    if phase < PI {
+        -1.0 + (2.0 * phase / PI)
+    } else {
+        1.0 - (2.0 * (phase - PI) / PI)
+    }
+}
 
 pub fn draw_waveform(
     display: &mut OledDisplay,
@@ -47,13 +62,13 @@ pub fn draw_waveform(
         let phase1 = (x as f32 / DISPLAY_WIDTH as f32) * TWO_PI * cycles_on_screen;
         let phase2 = ((x + 1) as f32 / DISPLAY_WIDTH as f32) * TWO_PI * cycles_on_screen;
 
-        let sin_val1 = sinf(phase1);
-        let sin_val2 = sinf(phase2);
+        let tri_val1 = triangle_wave(phase1);
+        let tri_val2 = triangle_wave(phase2);
 
         let y1 =
-            DISPLAY_CENTER_Y - (sin_val1 * smoothed_amp * (DISPLAY_CENTER_Y - 1) as f32) as i32;
+            DISPLAY_CENTER_Y - (tri_val1 * smoothed_amp * (DISPLAY_CENTER_Y - 1) as f32) as i32;
         let y2 =
-            DISPLAY_CENTER_Y - (sin_val2 * smoothed_amp * (DISPLAY_CENTER_Y - 1) as f32) as i32;
+            DISPLAY_CENTER_Y - (tri_val2 * smoothed_amp * (DISPLAY_CENTER_Y - 1) as f32) as i32;
 
         Line::new(Point::new(x, y1), Point::new(x + 1, y2))
             .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
