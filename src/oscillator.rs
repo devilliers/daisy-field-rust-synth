@@ -5,7 +5,8 @@ use libm::sinf;
 use micromath::F32Ext;
 
 // --- Constants ---
-pub const SAMPLE_RATE: f32 = 48_000.0;
+// Match this with the sample rate configured in Cargo.toml
+pub const SAMPLE_RATE: f32 = 96_000.0;
 const TWO_PI: f32 = 2.0 * PI;
 
 // --- Oscillator State ---

@@ -1,7 +1,6 @@
 // src/audio.rs
 
 use daisy::audio::{self, Block};
-use rtt_target::{rprintln, rtt_init_print};
 
 pub const BLOCK_LENGTH: usize = audio::BLOCK_LENGTH;
 

@@ -11,7 +11,7 @@ mod oscillator;
 use panic_halt as _;
 use rtic::app;
 use rtt_target::{rprintln, rtt_init_print};
-use systick_monotonic::fugit::{Duration, ExtU64};
+use systick_monotonic::fugit::ExtU64;
 
 use systick_monotonic::Systick;
 
@@ -51,8 +51,7 @@ mod app {
         audio: Audio,
     }
 
-    // This is the correct way to declare the monotonic timer for RTIC v1.
-    // It binds the SysTick interrupt and sets the tick rate.
+    // Bind the SysTick interrupt and set the tick rate.
     #[monotonic(binds = SysTick, default = true)]
     type MonoTimer = Systick<1000>;
 
